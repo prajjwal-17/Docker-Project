@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, g
@@ -5,15 +6,27 @@ from flask_cors import CORS
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from models import db, Task, User
 import jwt
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
 # ------------------ Database Config ------------------
-app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://postgres:your_password@localhost:5432/cloud_task"
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT")
+
+app.config["SQLALCHEMY_DATABASE_URI"] = (
+    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SECRET_KEY"] = "supersecretkey"
-app.config["JWT_EXP_DELTA_SECONDS"] = 3600  # token valid for 1 hour
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY")
+app.config["JWT_EXP_DELTA_SECONDS"] = int(os.getenv("JWT_EXP_DELTA_SECONDS", 3600))
 
 db.init_app(app)
 
@@ -40,13 +53,11 @@ def metrics():
     return generate_latest(), 200, {"Content-Type": CONTENT_TYPE_LATEST}
 
 # ------------------ Auth Routes ------------------
-
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.json
     if User.query.filter_by(username=data["username"]).first():
         return jsonify({"error": "User already exists"}), 400
-
     u = User(username=data["username"])
     u.set_password(data["password"])
     db.session.add(u)
@@ -59,7 +70,6 @@ def login():
     u = User.query.filter_by(username=data["username"]).first()
     if not u or not u.check_password(data["password"]):
         return jsonify({"error": "Invalid credentials"}), 401
-
     payload = {
         "user_id": u.id,
         "username": u.username,
@@ -76,19 +86,15 @@ def get_current_user():
     try:
         payload = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
         return User.query.get(payload["user_id"])
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
 
 # ------------------ Task CRUD ------------------
-
 @app.route("/api/tasks", methods=["GET"])
 def get_tasks():
     user = get_current_user()
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
-
     tasks = Task.query.filter_by(user_id=user.id).order_by(Task.created_at.desc()).all()
     return jsonify([{
         "id": t.id,
@@ -107,7 +113,6 @@ def create_task():
     user = get_current_user()
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
-
     data = request.json
     deadline = datetime.fromisoformat(data["deadline"]) if data.get("deadline") else None
     t = Task(
@@ -127,23 +132,19 @@ def update_task(task_id):
     user = get_current_user()
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
-
     data = request.json
     t = Task.query.filter_by(id=task_id, user_id=user.id).first_or_404()
-
     t.title = data.get("title", t.title)
     t.description = data.get("description", t.description)
     t.status = data.get("status", t.status)
     if "deadline" in data:
         t.deadline = datetime.fromisoformat(data["deadline"]) if data["deadline"] else None
-
     if t.status == "done" and not t.is_finished:
         t.is_finished = True
         t.finished_at = datetime.utcnow()
     elif t.status != "done":
         t.is_finished = False
         t.finished_at = None
-
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -152,7 +153,6 @@ def delete_task(task_id):
     user = get_current_user()
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
-
     t = Task.query.filter_by(id=task_id, user_id=user.id).first_or_404()
     db.session.delete(t)
     db.session.commit()
@@ -162,4 +162,4 @@ def delete_task(task_id):
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5000)

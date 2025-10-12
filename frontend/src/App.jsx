@@ -5,7 +5,7 @@ import StatsCards from "./components/StatsCard";
 import TaskForm from "./components/TaskForm";
 import FilterButtons from "./components/FilterButtons";
 import TaskList from "./components/TaskList";
-import AuthPage from "./components/AuthPAge";
+import AuthPage from "./components/AuthPage";
 import { useAuth } from "./context/AuthContext";
 import { fetchTasks, createTask, updateTask, deleteTask } from "./services/api";
 

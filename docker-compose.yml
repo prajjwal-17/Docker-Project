@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:17
+    container_name: cloud_task_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    container_name: cloud_task_backend
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - ./backend/.env
+    ports:
+      - "5000:5000"
+    command: ["sh", "wait-for-db.sh", "db", "python", "app.py"]
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: cloud_task_frontend
+    restart: always
+    ports:
+      - "3001:80"
+    env_file:
+      - ./frontend/.env
+
+volumes:
+  db_data:
